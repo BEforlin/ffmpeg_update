@@ -280,7 +280,21 @@ static int mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
     q += 2; /* patched after */
 
     /* put program info here */
+    // Parental Rating Descriptor
+	*q++ = 0x55; //tag
+	parental_rating_length_ptr = q;
+	*q++; //length, filled later
+    //putstr8(&q, DEFAULT_COUNTRY_CODE);
+	//country code with 3 chars, default is BRA
+	*q++ = 'B';
+	*q++ = 'R';
+	*q++ = 'A';
+	
+	*q++ = 0x01; // RSV 1b | SEX 1b | VIOLENCE 1b | DRUGS 1b | RATING 4b
 
+	//Fill  descriptor length
+	parental_rating_length_ptr[0] = q - parental_rating_length_ptr - 1;
+	
     val = 0xf000 | (q - program_info_length_ptr - 2);
     program_info_length_ptr[0] = val >> 8;
     program_info_length_ptr[1] = val;
