@@ -67,17 +67,24 @@ enum {
     MPEGTS_SERVICE_TYPE_ADVANCED_CODEC_DIGITAL_RADIO = 0x0A,
     MPEGTS_SERVICE_TYPE_MPEG2_DIGITAL_HDTV           = 0x11,
     MPEGTS_SERVICE_TYPE_ADVANCED_CODEC_DIGITAL_SDTV  = 0x16,
-    MPEGTS_SERVICE_TYPE_ADVANCED_CODEC_DIGITAL_HDTV  = 0x19
+    MPEGTS_SERVICE_TYPE_ADVANCED_CODEC_DIGITAL_HDTV  = 0x19,
+    MPEGTS_SERVICE_TYPE_ONE_SEG                      = 0xC0
 };
 typedef struct MpegTSWrite {
     const AVClass *av_class;
     MpegTSSection pat; /* MPEG2 pat table */
     MpegTSSection sdt; /* MPEG2 sdt table context */
+    MpegTSSection tot; /* MPEG2 tot table context */
+    MpegTSSection nit; /* MPEG2 nit table context*/
     MpegTSService **services;
     int sdt_packet_count;
     int sdt_packet_period;
     int pat_packet_count;
     int pat_packet_period;
+    int nit_packet_count;
+    int nit_packet_period;
+    int tot_packet_count;
+    int tot_packet_period;
     int nb_services;
     int onid;
     int tsid;
@@ -106,8 +113,12 @@ typedef struct MpegTSWrite {
     int tables_version;
     double pat_period;
     double sdt_period;
+    double nit_period;
+    double tot_period;
     int64_t last_pat_ts;
     int64_t last_sdt_ts;
+    int64_t last_nit_ts;
+    int64_t last_tot_ts;
 
     int omit_video_pes_length;
 } MpegTSWrite;
@@ -210,11 +221,15 @@ static int mpegts_write_section1(MpegTSSection *s, int tid, int id,
 
 #define DEFAULT_PROVIDER_NAME   "FFmpeg"
 #define DEFAULT_SERVICE_NAME    "Service01"
+#define DEFAULT_NETWORK_NAME    "LaPSI TV - UFRGS"
+#define DEFAULT_COUNTRY_CODE    "BRA"
 
 /* we retransmit the SI info at this rate */
 #define SDT_RETRANS_TIME 500
 #define PAT_RETRANS_TIME 100
 #define PCR_RETRANS_TIME 20
+#define NIT_RETRANS_TIME 50 //Arbitrary value, the brazilian standard requests the NIT to be send every 10 secs.
+#define TOT_RETRANS_TIME 100 //Arbitrary value, the brazilian standard requests the TOT to be send every 10 secs.
 
 typedef struct MpegTSWriteStream {
     struct MpegTSService *service;
@@ -619,6 +634,231 @@ static int mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
     return 0;
 }
 
+static void mpegts_write_nit(AVFormatContext *s)
+{
+	MpegTSWrite *ts = s->priv_data;
+	uint8_t data[SECTION_LENGTH], *q, *desc_len_ptr, *ts_loop_len_ptr, *transp_desc_len_ptr;
+	uint8_t *ts_info_desc_length_ptr, *service_list_desc_length_ptr, *part_rec_desc_length_ptr, *sys_mgmt_desc_length_ptr, *terr_del_sys_desc_length_ptr;
+	int i, temp_val, ts_loop_length_val, transp_desc_len_val;
+
+	q = data;
+	
+	desc_len_ptr = q;
+        q += 2;
+
+	//Network Name Descriptor
+	*q++ = 0x40; //tag
+        putstr8(&q, DEFAULT_NETWORK_NAME); //length and name string
+
+	// System Management Descriptor
+	*q++ = 0xFE; //tag
+	sys_mgmt_desc_length_ptr = q;
+	*q++; //length, filled later
+	*q++ = 0x03; //Bcast flag '00' Open TV, Bcast ID: '000011'
+	*q++ = 0x01; //Read from RBS1905.ts
+
+	//Fill  descriptor length
+	sys_mgmt_desc_length_ptr[0] = q - sys_mgmt_desc_length_ptr - 1;
+
+	//Other Descriptors
+	//...
+	//...
+	
+	//Fill the descriptors length field
+	temp_val = 0xF0 << 8 | (q - desc_len_ptr - 2);
+	//av_log(s, AV_LOG_VERBOSE, "calculated length: %x %x %d \n", desc_len_ptr[0], desc_len_ptr[1], (q - desc_len_ptr - 2));
+	desc_len_ptr[0] = temp_val >> 8;
+	desc_len_ptr[1] = temp_val;
+
+	//Begin of TS loop descriptors
+	ts_loop_len_ptr = q;
+	q +=2;
+
+	//TS ID, 16bits
+	put16(&q, ts->tsid);
+
+	//Original Network ID, 16bits
+	put16(&q, ts->onid);
+	
+	//Begin of transport descriptors
+	transp_desc_len_ptr = q;
+	q +=2;
+
+	//First Descriptor
+	//TS Information Descriptor
+	*q++ = 0xCD; //tag
+	ts_info_desc_length_ptr = q;
+	*q++; //length, filled later
+	*q++ = ts->virtual_channel; //remote control key id
+	//av_log(s, AV_LOG_VERBOSE, "==== virtual channel : %d physical channel %d \n", ts->virtual_channel, ts->physical_channel);
+	//length of ts name string, 6 bits | transmission type count, 2 bits
+	*q++ = strlen(DEFAULT_NETWORK_NAME) << 2 | 0x2;
+	memcpy(q, DEFAULT_NETWORK_NAME, strlen(DEFAULT_NETWORK_NAME));
+	q += strlen(DEFAULT_NETWORK_NAME);
+
+	switch (ts->transmission_profile) {
+		case 1:
+		default:
+			for(i = 0; i < ts->nb_services; i++) {
+			//	av_log(s, AV_LOG_VERBOSE, "==== service test fields: %x NW_ID:%x SVC_TYPE:%x PGM_NB:%x \n",
+			//		ts->services[i]->sid,
+			//		(( ts->services[i]->sid & 0xFFE0 ) >> 5 ),
+			//		(( ts->services[i]->sid & 0x18 ) >> 3 ),
+			//		(ts->services[i]->sid & 0x7 )
+			//	);
+				if( (ts->services[i]->sid & 0x18 >> 3 )) {//if true, is a 1-seg service
+					*q++ = 0xAF;; //transmission type: 0xAF: C
+					*q++ = 0x01; //number of services of this transm. type
+					put16(&q, ts->services[i]->sid);//service_ID
+				}
+				else {
+					*q++ = 0x0F; //transmission type: 0x0F: A
+					*q++ = 0x01; //number of services of this transm. type
+					put16(&q, ts->services[i]->sid);//service_ID
+				}
+			}
+		break;
+		case 2:
+			
+		break;
+	}
+
+	//Fill TS info descriptor length
+	ts_info_desc_length_ptr[0] = q - ts_info_desc_length_ptr - 1;
+	
+	//Service List Descriptor
+	*q++ = 0x41; //tag
+	service_list_desc_length_ptr = q;
+	*q++; //length, filled later
+
+	for(i = 0; i < ts->nb_services; i++) {
+		put16(&q, ts->services[i]->sid);//service_ID
+		*q++ = 0x01; //service type 0x01 for Digital TV Service
+	}
+
+	//Fill Service list descriptor length
+	service_list_desc_length_ptr[0] = q - service_list_desc_length_ptr - 1;
+
+	for(i = 0; i < ts->nb_services; i++) {
+		//av_log(s, AV_LOG_VERBOSE, "==== 1-seg Service test: %x \n", (ts->services[i]->sid & 0x18) >> 3 );
+		if(((ts->services[i]->sid & 0x18) >> 3) == 0x3) {//if true, is a 1-seg service
+			//av_log(s, AV_LOG_VERBOSE, "==== 1-seg Service detected, creating partial reception desriptor.\n" );
+			// Partial Reception Descriptor
+			*q++ = 0xFB; //tag
+			part_rec_desc_length_ptr = q;
+			*q++; //length, filled later
+			put16(&q, ts->services[i]->sid);
+			//Fill  descriptor length
+			part_rec_desc_length_ptr[0] = q - part_rec_desc_length_ptr - 1;
+		}
+	}
+
+	//// Terrestrial System Delivery Descriptor
+	*q++ = 0xFA; //tag
+	terr_del_sys_desc_length_ptr = q;
+	*q++; //length, filled later
+	put16(&q, ts->area_code << 4 | ts->guard_interval << 2 | ts->transmission_mode );// Area code | Guard interval | Transmission mode
+	put16(&q,  ( 473 + 6 * ( ts->physical_channel - 14 ) +1/7 ) * 7 );// Frequency field: ( 473 + 6 * ( CH - 14 ) +1/7 ) * 7
+	//*q++ = 0x; //
+
+	////Fill  descriptor length
+	terr_del_sys_desc_length_ptr[0] = q - terr_del_sys_desc_length_ptr - 1;
+
+
+	//// Descriptor
+	//*q++ = 0x41; //tag
+	//_length_ptr = q;
+	//*q++; //length, filled later
+	//put16(&q, 0x);//
+	//*q++ = 0x; //
+
+	////Fill  descriptor length
+	//_length_ptr[0] = q - _length_ptr - 1;
+
+
+
+	//Fill the Transport descriptors length field first
+	transp_desc_len_val = 0xF0 << 8 | (q - transp_desc_len_ptr - 2);
+
+	transp_desc_len_ptr[0] = transp_desc_len_val >> 8;
+	transp_desc_len_ptr[1] = transp_desc_len_val;
+
+
+	//Fill the TS loop length field after, for it contains the Transp. descriptors
+	ts_loop_length_val = 0xF0 << 8 | (q - ts_loop_len_ptr - 2);
+
+	ts_loop_len_ptr[0] = ts_loop_length_val >> 8;
+	ts_loop_len_ptr[1] = ts_loop_length_val;
+
+	
+	
+	//Write the table
+	mpegts_write_section1(&ts->nit, NIT_TID, ts->onid, ts->tables_version, 0, 0,
+                          data, q - data);
+}
+
+static void mpegts_write_tot(AVFormatContext *s)
+{
+    MpegTSWrite *ts = s->priv_data;
+    MpegTSService *service;
+    uint8_t section[SECTION_LENGTH], *q, *tot_length_ptr, *desc_len_ptr, *offset_desc_length_ptr;
+    int i, temp_val;
+	unsigned int tot_length;
+
+    q = section;
+    *q++ = TOT_TID;
+	tot_length_ptr = q;
+	q += 2; //Filled later
+
+    *q++ = 0xDD; //UTC-3 byte#0; year
+    *q++ = 0xE2; //UTC-3 byte#1; year
+    *q++ = 0x10; //UTC-3 byte#2; hour
+    *q++ = 0x20; //UTC-3 byte#3; min
+    *q++ = 0x30; //UTC-3 byte#4; sec
+
+	//Descriptors...	
+	desc_len_ptr = q;
+    q += 2;
+
+	//Local Time Offset Descriptor
+	*q++ = 0x58; //tag
+	offset_desc_length_ptr = q;
+	*q++; //length, filled later
+
+	*q++ = 'B'; //
+	*q++ = 'R'; //
+	*q++ = 'A'; //
+
+	*q++ = 0x03 << 2 | 0x2; //Country Region ID, 6bits | RSV 1bit = '1' | POLARITY 1bit
+	put16(&q, 0x0000);// Local Time Offset
+	
+	//Time of Change
+    *q++ = 0xDE; //UTC-3 byte#0; year
+    *q++ = 0x7B; //UTC-3 byte#0; year
+    *q++ = 0x00; //UTC-3 byte#0; hour
+    *q++ = 0x00; //UTC-3 byte#0; min
+    *q++ = 0x00; //UTC-3 byte#0; sec
+
+	put16(&q, 0x0100);// Next Time Offset
+
+	//Fill  descriptor length
+	offset_desc_length_ptr[0] = q - offset_desc_length_ptr - 1;
+
+	//Fill the descriptors length field
+	temp_val = 0xF0 << 8 | (q - desc_len_ptr - 2);
+	//av_log(s, AV_LOG_VERBOSE, "calculated length: %x %x %d \n", desc_len_ptr[0], desc_len_ptr[1], (q - desc_len_ptr - 2));
+	desc_len_ptr[0] = temp_val >> 8;
+	desc_len_ptr[1] = temp_val;
+
+
+
+	//Section length field completion
+	tot_length = q - tot_length_ptr - 2 + 4;// From beggining of UTC-3 field up to end of CRC: variable (q-ptr-2) + CRC (+4)
+    put16(&tot_length_ptr, 0xB000 | tot_length); //number of bytes in the section after the two bytes of section_number
+
+    mpegts_write_section(&ts->tot, section, tot_length + 3); // Add to tot_len the 1byte TID and the 2byte (flags | section_length)
+}
+
 /* NOTE: !str is accepted for an empty string */
 static void putstr8(uint8_t **q_ptr, const char *str)
 {
@@ -792,6 +1032,16 @@ static int mpegts_init(AVFormatContext *s)
     ts->pat.cc           = 15;
     ts->pat.write_packet = section_write_packet;
     ts->pat.opaque       = s;
+    
+    ts->nit.pid          = NIT_PID;
+    ts->nit.cc           = 15;
+    ts->nit.write_packet = section_write_packet;
+    ts->nit.opaque       = s;
+
+    ts->tot.pid          = TOT_PID;
+    ts->tot.cc           = 15;
+    ts->tot.write_packet = section_write_packet;
+    ts->tot.opaque       = s;
 
     ts->sdt.pid          = SDT_PID;
     ts->sdt.cc           = 15;
@@ -920,6 +1170,10 @@ static int mpegts_init(AVFormatContext *s)
                                      (TS_PACKET_SIZE * 8 * 1000);
         ts->pat_packet_period      = (int64_t)ts->mux_rate * PAT_RETRANS_TIME /
                                      (TS_PACKET_SIZE * 8 * 1000);
+        ts->nit_packet_period      = (int64_t)ts->mux_rate * NIT_RETRANS_TIME /
+                                     (TS_PACKET_SIZE * 8 * 1000);
+        ts->tot_packet_period      = (int64_t)ts->mux_rate * TOT_RETRANS_TIME /
+                                     (TS_PACKET_SIZE * 8 * 1000);
 
         if (ts->copyts < 1)
             ts->first_pcr = av_rescale(s->max_delay, PCR_TIME_BASE, AV_TIME_BASE);
@@ -927,6 +1181,8 @@ static int mpegts_init(AVFormatContext *s)
         /* Arbitrary values, PAT/PMT will also be written on video key frames */
         ts->sdt_packet_period = 200;
         ts->pat_packet_period = 40;
+        ts->nit_packet_period = 200; /*Suspeito valor arbitrario, rever*/
+        ts->tot_packet_period = 200; /*Suspeito valor arbitrario, rever*/
         if (pcr_st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
             int frame_size = av_get_audio_frame_duration2(pcr_st->codecpar, 0);
             if (!frame_size) {
@@ -949,6 +1205,8 @@ static int mpegts_init(AVFormatContext *s)
 
     ts->last_pat_ts = AV_NOPTS_VALUE;
     ts->last_sdt_ts = AV_NOPTS_VALUE;
+    ts->last_nit_ts = AV_NOPTS_VALUE;
+    ts->last_tot_ts = AV_NOPTS_VALUE;
     // The user specified a period, use only it
     if (ts->pat_period < INT_MAX/2) {
         ts->pat_packet_period = INT_MAX;
@@ -956,20 +1214,31 @@ static int mpegts_init(AVFormatContext *s)
     if (ts->sdt_period < INT_MAX/2) {
         ts->sdt_packet_period = INT_MAX;
     }
+    if (ts->nit_period < INT_MAX/2) {
+        ts->nit_packet_period = INT_MAX;
+    }
+    if (ts->tot_period < INT_MAX/2) {
+        ts->tot_packet_period = INT_MAX;
+    }
 
     // output a PCR as soon as possible
     service->pcr_packet_count = service->pcr_packet_period;
     ts->pat_packet_count      = ts->pat_packet_period - 1;
     ts->sdt_packet_count      = ts->sdt_packet_period - 1;
+    ts->nit_packet_count      = ts->nit_packet_period - 1;
+    ts->tot_packet_count      = ts->tot_packet_period - 1;
 
     if (ts->mux_rate == 1)
         av_log(s, AV_LOG_VERBOSE, "muxrate VBR, ");
     else
         av_log(s, AV_LOG_VERBOSE, "muxrate %d, ", ts->mux_rate);
     av_log(s, AV_LOG_VERBOSE,
-           "pcr every %d pkts, sdt every %d, pat/pmt every %d pkts\n",
+           "pcr every %d pkts, sdt every %d, pat/pmt every %d pkts\n, nit every %d pkts\n, tot every %d pkts\n",
            service->pcr_packet_period,
-           ts->sdt_packet_period, ts->pat_packet_period);
+           ts->sdt_packet_period, 
+           ts->pat_packet_period,
+           ts->nit_packet_period,
+           ts->tot_packet_period);
 
     if (ts->m2ts_mode == -1) {
         if (av_match_ext(s->filename, "m2ts")) {
@@ -1000,6 +1269,24 @@ static void retransmit_si_info(AVFormatContext *s, int force_pat, int64_t dts)
         if (dts != AV_NOPTS_VALUE)
             ts->last_sdt_ts = FFMAX(dts, ts->last_sdt_ts);
         mpegts_write_sdt(s);
+    }
+    if (++ts->nit_packet_count == ts->nit_packet_period ||
+        (dts != AV_NOPTS_VALUE && ts->last_nit_ts == AV_NOPTS_VALUE) ||
+        (dts != AV_NOPTS_VALUE && dts - ts->last_nit_ts >= ts->nit_period*90000.0)
+    ) {
+        ts->nit_packet_count = 0;
+        if (dts != AV_NOPTS_VALUE)
+            ts->last_nit_ts = FFMAX(dts, ts->last_nit_ts);
+        mpegts_write_nit(s);
+    }
+    if (++ts->tot_packet_count == ts->tot_packet_period ||
+        (dts != AV_NOPTS_VALUE && ts->last_tot_ts == AV_NOPTS_VALUE) ||
+        (dts != AV_NOPTS_VALUE && dts - ts->last_tot_ts >= ts->tot_period*90000.0)
+    ) {
+        ts->tot_packet_count = 0;
+        if (dts != AV_NOPTS_VALUE)
+            ts->last_tot_ts = FFMAX(dts, ts->last_tot_ts);
+        mpegts_write_tot(s);
     }
     if (++ts->pat_packet_count == ts->pat_packet_period ||
         (dts != AV_NOPTS_VALUE && ts->last_pat_ts == AV_NOPTS_VALUE) ||
@@ -1488,6 +1775,8 @@ static int mpegts_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
     if (ts->flags & MPEGTS_FLAG_REEMIT_PAT_PMT) {
         ts->pat_packet_count = ts->pat_packet_period - 1;
         ts->sdt_packet_count = ts->sdt_packet_period - 1;
+        ts->nit_packet_count = ts->nit_packet_period - 1;
+        ts->tot_packet_count = ts->tot_packet_period - 1;
         ts->flags           &= ~MPEGTS_FLAG_REEMIT_PAT_PMT;
     }
 
@@ -1790,6 +2079,20 @@ static const AVOption options[] = {
     { "mpegts_service_id", "Set service_id field.",
       offsetof(MpegTSWrite, service_id), AV_OPT_TYPE_INT,
       { .i64 = 0x0001 }, 0x0001, 0xffff, AV_OPT_FLAG_ENCODING_PARAM },
+    { "mpegts_final_nb_services", "Set desired number of services.",
+      offsetof(MpegTSWrite, final_nb_services), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0x0004, AV_OPT_FLAG_ENCODING_PARAM},
+    { "mpegts_area_code", "Set area_code field.",
+      offsetof(MpegTSWrite, area_code), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0x0DBF, AV_OPT_FLAG_ENCODING_PARAM},
+    { "mpegts_guard_interval", "Set guard_interval  field.",
+      offsetof(MpegTSWrite, guard_interval), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0x0004, AV_OPT_FLAG_ENCODING_PARAM},
+    { "mpegts_transmission_mode", "Set transmission_mode field.",
+      offsetof(MpegTSWrite, transmission_mode), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0x0004, AV_OPT_FLAG_ENCODING_PARAM},
+    { "mpegts_physical_channel", "Set physical_channel field.",
+      offsetof(MpegTSWrite, physical_channel), AV_OPT_TYPE_INT, {.i64 = 0x0014 }, 0x000E, 0x0045, AV_OPT_FLAG_ENCODING_PARAM},
+    { "mpegts_virtual_channel", "Set virtual_channel field.",
+      offsetof(MpegTSWrite, virtual_channel), AV_OPT_TYPE_INT, {.i64 = 0x0014 }, 0x0001, 0x0D45, AV_OPT_FLAG_ENCODING_PARAM},
+    { "mpegts_transmission_profile", "Set transmission_profile field.",
+      offsetof(MpegTSWrite, transmission_profile), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0x0002, AV_OPT_FLAG_ENCODING_PARAM},
     { "mpegts_service_type", "Set service_type field.",
       offsetof(MpegTSWrite, service_type), AV_OPT_TYPE_INT,
       { .i64 = 0x01 }, 0x01, 0xff, AV_OPT_FLAG_ENCODING_PARAM, "mpegts_service_type" },
