@@ -293,6 +293,7 @@ static int mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
             err = 1;
             break;
         }
+        if( ts_st->service->sid == service->sid ) {
         switch (st->codecpar->codec_id) {
         case AV_CODEC_ID_MPEG1VIDEO:
         case AV_CODEC_ID_MPEG2VIDEO:
@@ -606,8 +607,9 @@ static int mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
         val = 0xf000 | (q - desc_length_ptr - 2);
         desc_length_ptr[0] = val >> 8;
         desc_length_ptr[1] = val;
-    }
-
+        } //if stream service equal current service
+    } //for all streams in the context
+    
     if (err)
         av_log(s, AV_LOG_ERROR,
                "The PMT section cannot fit stream %d and all following streams.\n"
@@ -738,7 +740,8 @@ static int mpegts_init(AVFormatContext *s)
     const char *provider_name;
     int *pids;
     int ret;
-
+    int calculated_HD_service_ID, calculated_LD_service_ID;
+    
     if (s->max_delay < 0) /* Not set by the caller */
         s->max_delay = 0;
 
@@ -755,15 +758,42 @@ static int mpegts_init(AVFormatContext *s)
         service_name  = title ? title->value : DEFAULT_SERVICE_NAME;
         provider      = av_dict_get(s->metadata, "service_provider", NULL, 0);
         provider_name = provider ? provider->value : DEFAULT_PROVIDER_NAME;
-        service       = mpegts_add_service(ts, ts->service_id,
-                                           provider_name, service_name);
+        switch (ts->transmission_profile) {
+
+	    case 1://One HD service and one LD service
+	        default:
+		    //First we calculate the HD service ID based on the network_ID, service type (0x0 for TV, 0x3 for 1-SEG) and program counter
+		    calculated_HD_service_ID = 0x0000; //Initialization necessary?
+		    calculated_HD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x0 << 3 | 0x0;
+
+	        service = mpegts_add_service(ts, calculated_HD_service_ID, provider_name, "SVC HD Full Seg");
+	        service->pmt.write_packet = section_write_packet;
+	        service->pmt.opaque = s;
+	        service->pmt.cc = 15;
+
+		    calculated_LD_service_ID = 0x0000; //Initialization necessary?
+		    calculated_LD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x3 << 3 | 0x1;
+
+		    service = mpegts_add_service(ts, calculated_LD_service_ID, provider_name, "SVC LD 1-Seg");
+		    service->pmt.write_packet = section_write_packet;
+		    service->pmt.opaque = s;
+		    service->pmt.cc = 15;
+
+		    ts->final_nb_services = 2;
+	    break;
+	    case 2:
+		
+ 	    break;
+        }
+        //service       = mpegts_add_service(ts, ts->service_id,
+        //                                   provider_name, service_name);
 
         if (!service)
             return AVERROR(ENOMEM);
 
-        service->pmt.write_packet = section_write_packet;
-        service->pmt.opaque       = s;
-        service->pmt.cc           = 15;
+        //service->pmt.write_packet = section_write_packet;
+        //service->pmt.opaque       = s;
+        //service->pmt.cc           = 15;
     } else {
         for (i = 0; i < s->nb_programs; i++) {
             AVProgram *program = s->programs[i];
@@ -773,16 +803,44 @@ static int mpegts_init(AVFormatContext *s)
             service_name  = title ? title->value : DEFAULT_SERVICE_NAME;
             provider      = av_dict_get(program->metadata, "service_provider", NULL, 0);
             provider_name = provider ? provider->value : DEFAULT_PROVIDER_NAME;
-            service       = mpegts_add_service(ts, program->id,
-                                               provider_name, service_name);
+            switch (ts->transmission_profile) {
+
+	        case 1://One HD service and one LD service
+	        default:
+		    //First we calculate the HD service ID based on the network_ID, service type (0x0 for TV, 0x3 for 1-SEG) and program counter
+		    calculated_HD_service_ID = 0x0000; //Initialization necessary?
+		    calculated_HD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x0 << 3 | 0x0;
+
+	        service = mpegts_add_service(ts, calculated_HD_service_ID, provider_name, "SVC HD Full Seg");
+	        service->pmt.write_packet = section_write_packet;
+	        service->pmt.opaque = s;
+	        service->pmt.cc = 15;
+
+		    calculated_LD_service_ID = 0x0000; //Initialization necessary?
+		    calculated_LD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x3 << 3 | 0x1;
+
+		    service = mpegts_add_service(ts, calculated_LD_service_ID, provider_name, "SVC LD 1-Seg");
+		    service->pmt.write_packet = section_write_packet;
+		    service->pmt.opaque = s;
+		    service->pmt.cc = 15;
+            service->program          = program;
+            
+		    ts->final_nb_services = 2;
+	        break;
+	        case 2:
+		
+ 	        break;
+            }
+            //service       = mpegts_add_service(ts, program->id,
+            //                                   provider_name, service_name);
 
             if (!service)
                 return AVERROR(ENOMEM);
 
-            service->pmt.write_packet = section_write_packet;
-            service->pmt.opaque       = s;
-            service->pmt.cc           = 15;
-            service->program          = program;
+            //service->pmt.write_packet = section_write_packet;
+            //service->pmt.opaque       = s;
+            //service->pmt.cc           = 15;
+            //service->program          = program;
         }
     }
 
@@ -835,7 +893,7 @@ static int mpegts_init(AVFormatContext *s)
             }
         }
 
-        ts_st->service = service;
+        ts_st->service = ts->services[i % ts->final_nb_services] ; //TODO Potential point to modify the stream's owners.
         /* MPEG pid values < 16 are reserved. Applications which set st->id in
          * this range are assigned a calculated pid. */
         if (st->id < 16) {
@@ -848,7 +906,7 @@ static int mpegts_init(AVFormatContext *s)
             ret = AVERROR(EINVAL);
             goto fail;
         }
-        if (ts_st->pid == service->pmt.pid) {
+        if (ts_st->pid == ts_st->service->pmt.pid) {
             av_log(s, AV_LOG_ERROR, "Duplicate stream id %d\n", ts_st->pid);
             ret = AVERROR(EINVAL);
             goto fail;
@@ -867,8 +925,8 @@ static int mpegts_init(AVFormatContext *s)
         ts_st->cc              = 15;
         /* update PCR pid by using the first video stream */
         if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
-            service->pcr_pid == 0x1fff) {
-            service->pcr_pid = ts_st->pid;
+            ts_st->service->pcr_pid == 0x1fff) {
+            ts_st->service->pcr_pid = ts_st->pid;
             pcr_st           = st;
         }
         if (st->codecpar->codec_id == AV_CODEC_ID_AAC &&
@@ -906,15 +964,15 @@ static int mpegts_init(AVFormatContext *s)
     av_freep(&pids);
 
     /* if no video stream, use the first stream as PCR */
-    if (service->pcr_pid == 0x1fff && s->nb_streams > 0) {
+    if (ts_st->service->pcr_pid == 0x1fff && s->nb_streams > 0) {
         pcr_st           = s->streams[0];
         ts_st            = pcr_st->priv_data;
-        service->pcr_pid = ts_st->pid;
+        ts_st->service->pcr_pid = ts_st->pid;
     } else
         ts_st = pcr_st->priv_data;
 
     if (ts->mux_rate > 1) {
-        service->pcr_packet_period = (int64_t)ts->mux_rate * ts->pcr_period /
+        ts_st->service->pcr_packet_period = (ts->mux_rate * PCR_RETRANS_TIME) /
                                      (TS_PACKET_SIZE * 8 * 1000);
         ts->sdt_packet_period      = (int64_t)ts->mux_rate * SDT_RETRANS_TIME /
                                      (TS_PACKET_SIZE * 8 * 1000);
@@ -931,20 +989,20 @@ static int mpegts_init(AVFormatContext *s)
             int frame_size = av_get_audio_frame_duration2(pcr_st->codecpar, 0);
             if (!frame_size) {
                 av_log(s, AV_LOG_WARNING, "frame size not set\n");
-                service->pcr_packet_period =
+                ts_st->service->pcr_packet_period =
                     pcr_st->codecpar->sample_rate / (10 * 512);
             } else {
-                service->pcr_packet_period =
+                ts_st->service->pcr_packet_period =
                     pcr_st->codecpar->sample_rate / (10 * frame_size);
             }
         } else {
             // max delta PCR 0.1s
             // TODO: should be avg_frame_rate
-            service->pcr_packet_period =
+            ts_st->service->pcr_packet_period =
                 ts_st->user_tb.den / (10 * ts_st->user_tb.num);
         }
-        if (!service->pcr_packet_period)
-            service->pcr_packet_period = 1;
+        if (!ts_st->service->pcr_packet_period)
+            ts_st->service->pcr_packet_period = 1;
     }
 
     ts->last_pat_ts = AV_NOPTS_VALUE;
@@ -958,7 +1016,7 @@ static int mpegts_init(AVFormatContext *s)
     }
 
     // output a PCR as soon as possible
-    service->pcr_packet_count = service->pcr_packet_period;
+    ts_st->service->pcr_packet_count = ts_st->service->pcr_packet_period;
     ts->pat_packet_count      = ts->pat_packet_period - 1;
     ts->sdt_packet_count      = ts->sdt_packet_period - 1;
 
@@ -968,7 +1026,7 @@ static int mpegts_init(AVFormatContext *s)
         av_log(s, AV_LOG_VERBOSE, "muxrate %d, ", ts->mux_rate);
     av_log(s, AV_LOG_VERBOSE,
            "pcr every %d pkts, sdt every %d, pat/pmt every %d pkts\n",
-           service->pcr_packet_period,
+           ts_st->service->pcr_packet_period,
            ts->sdt_packet_period, ts->pat_packet_period);
 
     if (ts->m2ts_mode == -1) {
