@@ -1042,7 +1042,7 @@ static int mpegts_init(AVFormatContext *s)
     const char *provider_name;
     int *pids;
     int ret;
-    int calculated_HD_service_ID, calculated_LD_service_ID, calculated_SD_service_ID;
+    int calculated_FHD_service_ID, calculated_1SEG_service_ID, calculated_SD_service_ID, calculated_HD_service_ID;
 
     if (s->max_delay < 0) /* Not set by the caller */
         s->max_delay = 0;
@@ -1064,32 +1064,32 @@ static int mpegts_init(AVFormatContext *s)
         provider_name = provider ? provider->value : DEFAULT_PROVIDER_NAME;
         switch (ts->transmission_profile) {
 
-	    case 1://One HD service and one LD service
+	    case 1://One FHD service and one 1SEG service
 	        default:
 		    //First we calculate the HD service ID based on the network_ID, service type (0x0 for TV, 0x3 for 1-SEG) and program counter
-		    calculated_HD_service_ID = 0x0000; //Initialization necessary?
-		    calculated_HD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x0 << 3 | 0x0;
+		    calculated_FHD_service_ID = 0x0000; //Initialization necessary?
+		    calculated_FHD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x0 << 3 | 0x0;
 
-	        service = mpegts_add_service(ts, calculated_HD_service_ID, provider_name, "SVC HD Full Seg");
+	        service = mpegts_add_service(ts, calculated_FHD_service_ID, provider_name, "SVC HD Full Seg");
 	        service->pmt.write_packet = section_write_packet;
 	        service->pmt.opaque = s;
 	        service->pmt.cc = 15;
 
-		    calculated_LD_service_ID = 0x0000; //Initialization necessary?
-		    calculated_LD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x3 << 3 | 0x1;
+		    calculated_1SEG_service_ID = 0x0000; //Initialization necessary?
+		    calculated_1SEG_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x3 << 3 | 0x1;
 
-		    service = mpegts_add_service(ts, calculated_LD_service_ID, provider_name, "SVC LD 1-Seg");
+		    service = mpegts_add_service(ts, calculated_1SEG_service_ID, provider_name, "SVC LD 1-Seg");
 		    service->pmt.write_packet = section_write_packet;
 		    service->pmt.opaque = s;
 		    service->pmt.cc = 15;
 
 		    ts->final_nb_services = 2;
 	    break;
-	    case 2://Four SD services and one LD service
+	    case 2://Four SD services and one 1SEG service
             calculated_SD_service_ID = 0x0000;
             calculated_SD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x0 << 3 | 0x0;
 
-            service = mpegts_add_service(ts, calculated_HD_service_ID, provider_name, "SVC SD - 1");
+            service = mpegts_add_service(ts, calculated_SD_service_ID, provider_name, "SVC SD - 1");
 	        service->pmt.write_packet = section_write_packet;
 	        service->pmt.opaque = s;
 	        service->pmt.cc = 15;
@@ -1097,7 +1097,7 @@ static int mpegts_init(AVFormatContext *s)
             calculated_SD_service_ID = 0x0000;
             calculated_SD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x0 << 3 | 0x1;
 
-            service = mpegts_add_service(ts, calculated_HD_service_ID, provider_name, "SVC SD - 2");
+            service = mpegts_add_service(ts, calculated_SD_service_ID, provider_name, "SVC SD - 2");
 	        service->pmt.write_packet = section_write_packet;
 	        service->pmt.opaque = s;
 	        service->pmt.cc = 15;
@@ -1105,7 +1105,7 @@ static int mpegts_init(AVFormatContext *s)
             calculated_SD_service_ID = 0x0000;
             calculated_SD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x0 << 3 | 0x2;
 
-            service = mpegts_add_service(ts, calculated_HD_service_ID, provider_name, "SVC SD - 3");
+            service = mpegts_add_service(ts, calculated_SD_service_ID, provider_name, "SVC SD - 3");
 	        service->pmt.write_packet = section_write_packet;
 	        service->pmt.opaque = s;
 	        service->pmt.cc = 15;
@@ -1113,28 +1113,47 @@ static int mpegts_init(AVFormatContext *s)
             calculated_SD_service_ID = 0x0000;
             calculated_SD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x0 << 3 | 0x3;
 
-            service = mpegts_add_service(ts, calculated_HD_service_ID, provider_name, "SVC SD - 4");
+            service = mpegts_add_service(ts, calculated_SD_service_ID, provider_name, "SVC SD - 4");
 	        service->pmt.write_packet = section_write_packet;
 	        service->pmt.opaque = s;
 	        service->pmt.cc = 15;
 
-            calculated_LD_service_ID = 0x0000; //Initialization necessary?
-		    calculated_LD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x3 << 3 | 0x4;
+            calculated_1SEG_service_ID = 0x0000; //Initialization necessary?
+		    calculated_1SEG_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x3 << 3 | 0x4;
 
-		    service = mpegts_add_service(ts, calculated_LD_service_ID, provider_name, "SVC LD 1-Seg");
+		    service = mpegts_add_service(ts, calculated_1SEG_service_ID, provider_name, "SVC LD 1-Seg");
 		    service->pmt.write_packet = section_write_packet;
 		    service->pmt.opaque = s;
 		    service->pmt.cc = 15;
 
             ts->final_nb_services = 5;
-		//for(i = 0;i < ts->final_nb_services; i++) {
-	    //		service = mpegts_add_service(ts, ts->service_id+i, provider_name, service_name);
-	//
-	  //  		service->pmt.write_packet = section_write_packet;
-	    //		service->pmt.opaque = s;
-	    	//	service->pmt.cc = 15;
-        		//}
- 	    break;
+ 	        break;
+        case 3: //Two HD services and one 1SEG service
+            calculated_HD_service_ID = 0x0000;
+            calculated_HD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x0 << 3 | 0x0;
+
+            service = mpegts_add_service(ts, calculated_HD_service_ID, provider_name, "SVC HD - 1");
+	        service->pmt.write_packet = section_write_packet;
+	        service->pmt.opaque = s;
+	        service->pmt.cc = 15;
+            
+            calculated_HD_service_ID = 0x0000;
+            calculated_HD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x0 << 3 | 0x1;
+
+            service = mpegts_add_service(ts, calculated_HD_service_ID, provider_name, "SVC HD - 2");
+	        service->pmt.write_packet = section_write_packet;
+	        service->pmt.opaque = s;
+	        service->pmt.cc = 15;
+
+            calculated_1SEG_service_ID = 0x0000;
+		    calculated_1SEG_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x3 << 3 | 0x4;
+
+		    service = mpegts_add_service(ts, calculated_1SEG_service_ID, provider_name, "SVC LD 1-Seg");
+		    service->pmt.write_packet = section_write_packet;
+		    service->pmt.opaque = s;
+		    service->pmt.cc = 15;
+            ts->final_nb_services = 3;
+ 	        break;
         }
        
         //service       = mpegts_add_service(ts, ts->service_id,provider_name, service_name);
