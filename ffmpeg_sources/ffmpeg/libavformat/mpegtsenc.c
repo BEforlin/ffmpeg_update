@@ -1084,7 +1084,7 @@ static int mpegts_init(AVFormatContext *s)
 		    service->pmt.cc = 15;
 
 		    ts->final_nb_services = 2;
-	    break;
+	        break;
 	    case 2://Four SD services and one 1SEG service
             calculated_SD_service_ID = 0x0000;
             calculated_SD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x0 << 3 | 0x0;
@@ -1187,10 +1187,10 @@ static int mpegts_init(AVFormatContext *s)
 	        service->pmt.opaque = s;
 	        service->pmt.cc = 15;
 
-		    calculated_LD_service_ID = 0x0000; //Initialization necessary?
-		    calculated_LD_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x3 << 3 | 0x1;
+		    calculated_1SEG_service_ID = 0x0000; //Initialization necessary?
+		    calculated_1SEG_service_ID = ( ts->onid & 0x7FF ) << 5 | 0x3 << 3 | 0x1;
 
-		    service = mpegts_add_service(ts, calculated_LD_service_ID, provider_name, "SVC LD 1-Seg");
+		    service = mpegts_add_service(ts, calculated_1SEG_service_ID, provider_name, "SVC LD 1-Seg");
 		    service->pmt.write_packet = section_write_packet;
 		    service->pmt.opaque = s;
 		    service->pmt.cc = 15;
@@ -2273,7 +2273,7 @@ static const AVOption options[] = {
       { .i64 = 0x0001 }, 0x0001, 0xffff, AV_OPT_FLAG_ENCODING_PARAM },
 
     { "mpegts_final_nb_services", "Set desired number of services.",
-      offsetof(MpegTSWrite, final_nb_services), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0x0004, AV_OPT_FLAG_ENCODING_PARAM},
+      offsetof(MpegTSWrite, final_nb_services), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0x0005, AV_OPT_FLAG_ENCODING_PARAM},
     { "mpegts_area_code", "Set area_code field.",
       offsetof(MpegTSWrite, area_code), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0x0DBF, AV_OPT_FLAG_ENCODING_PARAM},
     { "mpegts_guard_interval", "Set guard_interval  field.",
@@ -2285,7 +2285,7 @@ static const AVOption options[] = {
     { "mpegts_virtual_channel", "Set virtual_channel field.",
       offsetof(MpegTSWrite, virtual_channel), AV_OPT_TYPE_INT, {.i64 = 0x0014 }, 0x0001, 0x0D45, AV_OPT_FLAG_ENCODING_PARAM},
     { "mpegts_transmission_profile", "Set transmission_profile field.",
-      offsetof(MpegTSWrite, transmission_profile), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0x0002, AV_OPT_FLAG_ENCODING_PARAM},
+      offsetof(MpegTSWrite, transmission_profile), AV_OPT_TYPE_INT, {.i64 = 0x0001 }, 0x0001, 0x0003, AV_OPT_FLAG_ENCODING_PARAM},
 
     { "mpegts_service_type", "Set service_type field.",
       offsetof(MpegTSWrite, service_type), AV_OPT_TYPE_INT,
