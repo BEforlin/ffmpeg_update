@@ -988,7 +988,7 @@ static void mpegts_write_eit(AVFormatContext *s)
     MpegTSWrite *ts = s->priv_data;
     MpegTSService *service;
     uint8_t data[SECTION_LENGTH], *q, *desc_list_len_ptr, *short_event_desc_len, *event_name_len, *text_len;
-    uint8_t *parental_rat_desc_len, *component_desc_len;
+    uint8_t *parental_rat_desc_len, *component_desc_len, *audio_comp_desc_len, *content_desc_len;
     int i, j, running_status, free_ca_mode, val;
 
     q = data;
@@ -1086,14 +1086,46 @@ static void mpegts_write_eit(AVFormatContext *s)
             *q++ = 0x70;//ISO_639_language_code default language 'por' value 706F72
             *q++ = 0x6F;
             *q++ = 0x72;
-            *q++ = 'V';
+            *q++ = 'V'; //TODO converter para parametro de entrada e um loop
             *q++ = 'i';
             *q++ = 'd';
             *q++ = 'e';
             *q++ = 'o';
+            //Fill descriptor length
+            component_desc_len[0] = q - component_desc_len - 1;
 
-            //Audio Component Descriptor
+            //Audio Component Descriptor TODO converter para parametro de entrada em um loop para cada audio
+            *q++ = 0xc4;
+            audio_comp_desc_len = q;
+            *q++;//lentg filled later
+            *q++ = 0x06; //stream_content
+            *q++ = 0x03; //component_type
+            *q++ = 0x10; //component_tag
+            *q++ = 0x53; //ISO/IEC 14496-3 Audio
+            *q++ = 0xff; //simulcast_group_tag
+            *q++ =    0; //ES_multi_lingual_flag
+            *q++ =    1; //main_component_flag
+            *q++ =    1; //quality_indicator_mode
+            *q++ = 0x2F; //qual_freq_res
+            *q++ = 0x70;//ISO_639_language_code default language 'por' value 706F72
+            *q++ = 0x6F;
+            *q++ = 0x72;
+            *q++ = 'A'; //TODO converter para parametro de entrada
+            *q++ = 'u';
+            *q++ = 'd';
+            *q++ = 'i';
+            *q++ = 'o';
+            //Fill descriptor length
+            audio_comp_desc_len[0] = q - audio_comp_desc_len - 1;
 
+            //Content Descriptor
+            *q++ = 0x54;
+            content_desc_len = q;
+            *q++;
+            *q++ = 0x02; //content_nibble
+            *q++ = 0xEE; //user_byte
+            //Fill descriptor length
+            content_desc_len[0] = q - content_desc_len - 1;
 
 
         }

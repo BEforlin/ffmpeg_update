@@ -136,8 +136,8 @@
       <file leaf-file-name="mpegtsenc.c" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/libavformat/mpegtsenc.c">
           <provider selected="true" editor-type-id="text-editor">
-            <state vertical-scroll-proportion="1.6262627">
-              <caret line="1109" column="1" selection-start-line="1109" selection-start-column="1" selection-end-line="1109" selection-end-column="1" />
+            <state vertical-scroll-proportion="0.1919192">
+              <caret line="1115" column="21" selection-start-line="1115" selection-start-column="21" selection-end-line="1115" selection-end-column="21" />
               <folding />
             </state>
           </provider>
@@ -147,7 +147,7 @@
         <entry file="file://$USER_HOME$/Desktop/protEIT.c">
           <provider selected="true" editor-type-id="text-editor">
             <state vertical-scroll-proportion="0.0">
-              <caret line="124" column="1" selection-start-line="0" selection-start-column="0" selection-end-line="124" selection-end-column="1" />
+              <caret line="156" column="1" selection-start-line="0" selection-start-column="0" selection-end-line="156" selection-end-column="1" />
               <folding />
             </state>
           </provider>
@@ -628,15 +628,15 @@
     <entry file="file://$USER_HOME$/Desktop/protEIT.c">
       <provider selected="true" editor-type-id="text-editor">
         <state vertical-scroll-proportion="0.0">
-          <caret line="124" column="1" selection-start-line="0" selection-start-column="0" selection-end-line="124" selection-end-column="1" />
+          <caret line="156" column="1" selection-start-line="0" selection-start-column="0" selection-end-line="156" selection-end-column="1" />
           <folding />
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/libavformat/mpegtsenc.c">
       <provider selected="true" editor-type-id="text-editor">
-        <state vertical-scroll-proportion="1.6262627">
-          <caret line="1109" column="1" selection-start-line="1109" selection-start-column="1" selection-end-line="1109" selection-end-column="1" />
+        <state vertical-scroll-proportion="0.1919192">
+          <caret line="1115" column="21" selection-start-line="1115" selection-start-column="21" selection-end-line="1115" selection-end-column="21" />
           <folding />
         </state>
       </provider>
