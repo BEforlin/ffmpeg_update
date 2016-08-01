@@ -77,6 +77,7 @@ typedef struct MpegTSWrite {
     MpegTSService **services;
     MpegTSSection tot; /* MPEG2 tot table context */
     MpegTSSection nit; /* MPEG2 nit table context*/
+    MpegTSSection eit; /* MPEG2 eit table context*/
     int nit_packet_count;
     int nit_packet_period;
     int tot_packet_count;
@@ -85,6 +86,8 @@ typedef struct MpegTSWrite {
     int sdt_packet_period;
     int pat_packet_count;
     int pat_packet_period;
+    int eit_packet_count;
+    int eit_packet_period;
 
     int final_nb_services;
     int area_code;
@@ -123,10 +126,12 @@ typedef struct MpegTSWrite {
     double sdt_period;
     double nit_period;
     double tot_period;
+    double eit_period;
     int64_t last_pat_ts;
     int64_t last_sdt_ts;
     int64_t last_nit_ts;
     int64_t last_tot_ts;
+    int64_t last_eit_ts;
 
     int omit_video_pes_length;
 } MpegTSWrite;
@@ -240,6 +245,7 @@ static int mpegts_write_section1(MpegTSSection *s, int tid, int id,
 #define TOT_RETRANS_TIME 100 //Arbitrary value, the brazilian standard requests the TOT to be send every 10 secs.
 #define PAT_RETRANS_TIME 100
 #define PCR_RETRANS_TIME 20
+#define EIT_RETRANS_TIME 500
 // TODO Add here the new tables retransmission rate
 
 typedef struct MpegTSWriteStream {
@@ -977,6 +983,132 @@ static void mpegts_write_tot(AVFormatContext *s)
     mpegts_write_section(&ts->tot, section, tot_length + 3); // Add to tot_len the 1byte TID and the 2byte (flags | section_length)
 }
 
+static void mpegts_write_eit(AVFormatContext *s)
+{
+    MpegTSWrite *ts = s->priv_data;
+    MpegTSService *service;
+    uint8_t data[SECTION_LENGTH], *q, *desc_list_len_ptr, *short_event_desc_len, *event_name_len, *text_len;
+    uint8_t *parental_rat_desc_len, *component_desc_len;
+    int i, j, running_status, free_ca_mode, val;
+
+    q = data;
+    put16(&q, ts->tsid);
+    put16(&q, ts->onid);
+    *q++ = 0;//segment_last_section_number
+    *q++ = EIT_TID;//last_table_id
+
+    for(i = 0; i < s->nb_streams; i++){     //loop number of services
+        service = ts->services[i];
+        put16(&q, service->sid);
+        //start_time
+        *q++ = 0xDD; //UTC-3 byte#0; year //TODO parametro de entrada
+        *q++ = 0xE2; //UTC-3 byte#1; year //TODO parametro de entrada
+        *q++ = 0x10; //UTC-3 byte#2; hour //TODO parametro de entrada
+        *q++ = 0x20; //UTC-3 byte#3; min  //TODO parametro de entrada
+        *q++ = 0x30; //UTC-3 byte#4; sec; //TODO parametro de entrada
+        //duration
+        *q++ = 0x10; //UTC-3 byte#2; hour //TODO parametro de entrada
+        *q++ = 0x20; //UTC-3 byte#3; min  //TODO parametro de entrada
+        *q++ = 0x30; //UTC-3 byte#4; sec; //TODO parametro de entrada
+        desc_list_len_ptr = q;
+        q                += 2;
+        //TODO defirnir running status como um if com os valores da TOT
+        running_status    = 4; /* running */
+        free_ca_mode      = 0;
+        //insert descriptors bellow
+        //TODO inserir descritores
+        if( (service->sid & 0x18 >> 3 )) {//if true, is a 1-seg service
+            //Short event descriptor
+            *q++ = 0x4d;//descriptor tag
+            short_event_desc_len = q;//descriptor length
+            *q++; //length, filled later
+            *q++ = 0x70;//ISO_639_language_code default language 'por' value 706F72
+            *q++ = 0x6F;
+            *q++ = 0x72;
+            event_name_len = 5;//event name length TODO coverter tudo isso para um loop for e parametros de entrada
+            *q++ = 'L';
+            *q++ = 'a';
+            *q++ = 'P';
+            *q++ = 'S';
+            *q++ = 'I';
+            text_len = 1;//text length TODO converter tudo isso para um loop for e parametros de entrada
+            *q++ = 'N';
+            //Fill  descriptor length
+            short_event_desc_len[0] = q - short_event_desc_len - 1;
+
+            //Parental Rating descriptor
+            *q++ = 0x55;
+            parental_rat_desc_len = q;
+            *q++ = 'B';//TODO converter para parametro de entrada
+            *q++ = 'R';//TODO converter para parametro de entrada
+            *q++ = 'A';//TODO converter para parametro de entrada
+            *q++ = 1;  //TODO converter para parametro de entrada
+            //Fill  descriptor length
+            parental_rat_desc_len[0] = q - parental_rat_desc_len - 1;
+
+        }
+        else {
+            //Short event descriptor
+            *q++ = 0x4d;//descriptor tag
+            short_event_desc_len = q;//descriptor length
+            *q++; //length, filled later
+            *q++ = 0x70;//ISO_639_language_code default language 'por' value 706F72
+            *q++ = 0x6F;
+            *q++ = 0x72;
+            event_name_len = 5;//event name length TODO coverter tudo isso para um loop for e parametros de entrada
+            *q++ = 'L';
+            *q++ = 'a';
+            *q++ = 'P';
+            *q++ = 'S';
+            *q++ = 'I';
+            text_len = 1;//text length TODO converter tudo isso para um loop for e parametros de entrada
+            *q++ = 'N';
+            //Fill  descriptor length
+            short_event_desc_len[0] = q - short_event_desc_len - 1;
+
+            //Parental Rating descriptor
+            *q++ = 0x55;
+            parental_rat_desc_len = q;
+            *q++ = 'B';//TODO converter para parametro de entrada
+            *q++ = 'R';//TODO converter para parametro de entrada
+            *q++ = 'A';//TODO converter para parametro de entrada
+            *q++ = 1;  //TODO converter para parametro de entrada
+            //Fill  descriptor length
+            parental_rat_desc_len[0] = q - parental_rat_desc_len - 1;
+
+            //Component Descriptor
+            *q++ = 0x50;
+            component_desc_len = q;
+            *q++; //length filled later
+            *q++ = 0x05;
+            *q++ = 0xb3;
+            *q++ = 0x00;
+            *q++ = 0x70;//ISO_639_language_code default language 'por' value 706F72
+            *q++ = 0x6F;
+            *q++ = 0x72;
+            *q++ = 'V';
+            *q++ = 'i';
+            *q++ = 'd';
+            *q++ = 'e';
+            *q++ = 'o';
+
+            //Audio Component Descriptor
+
+
+
+        }
+
+        /* end of descriptor field, now fill descriptor length */
+        val = (running_status << 13) | (free_ca_mode << 12) |
+              (q - desc_list_len_ptr - 2);
+        desc_list_len_ptr[0] = val >> 8;
+        desc_list_len_ptr[1] = val;
+    }
+
+    mpegts_write_section1(&ts->eit, EIT_TID, service->sid, ts->tables_version, 0, 0,
+                          data, q - data);
+}
+
 
 static MpegTSService *mpegts_add_service(MpegTSWrite *ts, int sid,
                                          const char *provider_name,
@@ -1236,6 +1368,11 @@ static int mpegts_init(AVFormatContext *s)
     ts->tot.write_packet = section_write_packet;
     ts->tot.opaque       = s;
 
+    ts->eit.pid          = EIT_PID;
+    ts->eit.cc           = 15;
+    ts->eit.write_packet = section_write_packet;
+    ts->eit.opaque       = s;
+
     pids = av_malloc_array(s->nb_streams, sizeof(*pids));
     if (!pids) {
         ret = AVERROR(ENOMEM);
@@ -1362,6 +1499,8 @@ static int mpegts_init(AVFormatContext *s)
                                      (TS_PACKET_SIZE * 8 * 1000);
         ts->tot_packet_period      = (int64_t)ts->mux_rate * TOT_RETRANS_TIME /
                                      (TS_PACKET_SIZE * 8 * 1000);
+        ts->eit_packet_period      = (int64_t)ts->mux_rate * EIT_RETRANS_TIME /
+                                              (TS_PACKET_SIZE * 8 * 1000);
 
         if (ts->copyts < 1)
             ts->first_pcr = av_rescale(s->max_delay, PCR_TIME_BASE, AV_TIME_BASE);
@@ -1371,6 +1510,7 @@ static int mpegts_init(AVFormatContext *s)
         ts->pat_packet_period = 40;
         ts->nit_packet_period = 200; /*Suspeito valor arbitrario, rever*/
         ts->tot_packet_period = 200; /*Suspeito valor arbitrario, rever*/
+        ts->eit_packet_period = 200; /*Suspeito valor arbitrario, rever*/
         if (pcr_st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
             int frame_size = av_get_audio_frame_duration2(pcr_st->codecpar, 0);
             if (!frame_size) {
@@ -1395,6 +1535,7 @@ static int mpegts_init(AVFormatContext *s)
     ts->last_sdt_ts = AV_NOPTS_VALUE;
     ts->last_nit_ts = AV_NOPTS_VALUE;
     ts->last_tot_ts = AV_NOPTS_VALUE;
+    ts->last_eit_ts = AV_NOPTS_VALUE;
     // The user specified a period, use only it
     if (ts->pat_period < INT_MAX/2) {
         ts->pat_packet_period = INT_MAX;
@@ -1408,6 +1549,9 @@ static int mpegts_init(AVFormatContext *s)
     if (ts->tot_period < INT_MAX/2) {
         ts->tot_packet_period = INT_MAX;
     }
+    if (ts->eit_period < INT_MAX/2) {
+        ts->eit_packet_period = INT_MAX;
+    }
 
     // output a PCR as soon as possible
     ts_st->service->pcr_packet_count = ts_st->service->pcr_packet_period;
@@ -1415,6 +1559,7 @@ static int mpegts_init(AVFormatContext *s)
     ts->sdt_packet_count      = ts->sdt_packet_period - 1;
     ts->nit_packet_count      = ts->nit_packet_period - 1;
     ts->tot_packet_count      = ts->tot_packet_period - 1;
+    ts->eit_packet_count      = ts->eit_packet_period - 1;
 
     if (ts->mux_rate == 1)
         av_log(s, AV_LOG_VERBOSE, "muxrate VBR, ");
@@ -1426,7 +1571,8 @@ static int mpegts_init(AVFormatContext *s)
            ts->sdt_packet_period, 
            ts->pat_packet_period,
            ts->nit_packet_period,
-           ts->tot_packet_period);
+           ts->tot_packet_period,
+           ts->eit_packet_period);
 
     if (ts->m2ts_mode == -1) {
         if (av_match_ext(s->filename, "m2ts")) {
@@ -1478,6 +1624,16 @@ static void retransmit_si_info(AVFormatContext *s, int force_pat, int64_t dts)
         if (dts != AV_NOPTS_VALUE)
             ts->last_tot_ts = FFMAX(dts, ts->last_tot_ts);
         mpegts_write_tot(s);
+    }
+
+    if (++ts->eit_packet_count == ts->eit_packet_period ||
+        (dts != AV_NOPTS_VALUE && ts->last_eit_ts == AV_NOPTS_VALUE) ||
+        (dts != AV_NOPTS_VALUE && dts - ts->last_eit_ts >= ts->eit_period*90000.0)
+            ) {
+        ts->eit_packet_count = 0;
+        if (dts != AV_NOPTS_VALUE)
+            ts->last_eit_ts = FFMAX(dts, ts->last_eit_ts);
+        mpegts_write_eit(s);
     }
 
     if (++ts->pat_packet_count == ts->pat_packet_period ||
@@ -1969,6 +2125,7 @@ static int mpegts_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
         ts->sdt_packet_count = ts->sdt_packet_period - 1;
         ts->nit_packet_count = ts->nit_packet_period - 1;
         ts->tot_packet_count = ts->tot_packet_period - 1;
+        ts->eit_packet_count = ts->eit_packet_period - 1;
         ts->flags           &= ~MPEGTS_FLAG_REEMIT_PAT_PMT;
     }
 

@@ -37,6 +37,7 @@
 #define SDT_PID                 0x0011
 #define NIT_PID                 0x0010
 #define TOT_PID                 0x0014
+#define EIT_PID                 0x0012
 
 /* table ids */
 #define PAT_TID   0x00
@@ -44,7 +45,8 @@
 #define M4OD_TID  0x05
 #define SDT_TID   0x42
 #define NIT_TID   0x40
-#define TOT_TID   0x73   
+#define TOT_TID   0x73
+#define EIT_TID   0x4E
 
 #define STREAM_TYPE_VIDEO_MPEG1     0x01
 #define STREAM_TYPE_VIDEO_MPEG2     0x02
