@@ -1259,9 +1259,9 @@ int ff_h264_decode_slice_header(H264Context *h, H264SliceContext *sl)
         return AVERROR_INVALIDDATA;
     }
     if (!h->pps_buffers[pps_id]) {
-        //av_log(h->avctx, AV_LOG_ERROR,
-        //       "non-existing PPS %u referenced\n",
-        //       pps_id);
+        av_log(h->avctx, AV_LOG_ERROR,
+               "non-existing PPS %u referenced\n",
+               pps_id);
         return AVERROR_INVALIDDATA;
     }
     if (h->au_pps_id >= 0 && pps_id != h->au_pps_id) {
@@ -1274,9 +1274,9 @@ int ff_h264_decode_slice_header(H264Context *h, H264SliceContext *sl)
     pps = h->pps_buffers[pps_id];
 
     if (!h->sps_buffers[pps->sps_id]) {
-        //av_log(h->avctx, AV_LOG_ERROR,
-        //       "non-existing SPS %u referenced\n",
-        //       h->pps.sps_id);
+        av_log(h->avctx, AV_LOG_ERROR,
+               "non-existing SPS %u referenced\n",
+               h->pps.sps_id);
         return AVERROR_INVALIDDATA;
     }
 

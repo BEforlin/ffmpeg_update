@@ -324,14 +324,14 @@ static inline int parse_nal_units(AVCodecParserContext *s,
                 return -1;
             }
             if (!h->pps_buffers[pps_id]) {
-                //av_log(h->avctx, AV_LOG_ERROR,
-                //       "non-existing PPS %u referenced\n", pps_id);
+                av_log(h->avctx, AV_LOG_ERROR,
+                       "non-existing PPS %u referenced\n", pps_id);
                 return -1;
             }
             h->pps = *h->pps_buffers[pps_id];
             if (!h->sps_buffers[h->pps.sps_id]) {
-                //av_log(h->avctx, AV_LOG_ERROR,
-                //       "non-existing SPS %u referenced\n", h->pps.sps_id);
+                av_log(h->avctx, AV_LOG_ERROR,
+                       "non-existing SPS %u referenced\n", h->pps.sps_id);
                 return -1;
             }
             h->sps       = *h->sps_buffers[h->pps.sps_id];
